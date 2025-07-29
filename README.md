@@ -35,7 +35,7 @@ Get up and running in under 5 minutes:
 
 ### 1. Clone Repository
 ```bash
-git clone https://github.com/DefoxxAnalytics/bol-ocr-extractor.git
+git clone https://github.com/bomino/bol-ocr-extractor.git
 cd bol-ocr-extractor
 ```
 
@@ -424,7 +424,7 @@ This project benefits from specialized AI agents:
 
 ### Reporting Issues
 Found a bug or have a feature request? Please:
-1. Check existing [GitHub Issues](https://github.com/DefoxxAnalytics/bol-ocr-extractor/issues)
+1. Check existing [GitHub Issues](https://github.com/bomino/bol-ocr-extractor/issues)
 2. Create a new issue with:
    - Clear description of the problem
    - Steps to reproduce
