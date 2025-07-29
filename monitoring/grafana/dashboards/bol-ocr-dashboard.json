@@ -1,0 +1,287 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "BOL OCR Extractor - Main Dashboard",
+    "tags": ["bol-ocr", "application", "monitoring"],
+    "style": "dark",
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Application Overview",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "up{job=\"bol-ocr-app\"}",
+            "legendFormat": "Application Status"
+          }
+        ],
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+        "options": {
+          "colorMode": "background",
+          "graphMode": "none",
+          "justifyMode": "center",
+          "orientation": "horizontal",
+          "reduceOptions": {
+            "values": false,
+            "calcs": ["lastNotNull"],
+            "fields": ""
+          }
+        },
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [
+              {"options": {"0": {"text": "DOWN", "color": "red"}}, "type": "value"},
+              {"options": {"1": {"text": "UP", "color": "green"}}, "type": "value"}
+            ]
+          }
+        }
+      },
+      {
+        "id": 2,
+        "title": "Total Requests (24h)",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "increase(http_requests_total{job=\"bol-ocr-app\"}[24h])",
+            "legendFormat": "Requests"
+          }
+        ],
+        "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "Error Rate (%)",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "rate(http_requests_total{job=\"bol-ocr-app\",status=~\"5..\"}[5m]) / rate(http_requests_total{job=\"bol-ocr-app\"}[5m]) * 100",
+            "legendFormat": "Error Rate"
+          }
+        ],
+        "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 2},
+                {"color": "red", "value": 5}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 4,
+        "title": "Response Time (95th percentile)",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job=\"bol-ocr-app\"}[5m]))",
+            "legendFormat": "Response Time"
+          }
+        ],
+        "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 5},
+                {"color": "red", "value": 10}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 5,
+        "title": "Request Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(http_requests_total{job=\"bol-ocr-app\"}[5m])",
+            "legendFormat": "{{method}} {{status}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+        "yAxes": [
+          {"label": "Requests/sec", "show": true},
+          {"show": false}
+        ],
+        "xAxis": {"show": true}
+      },
+      {
+        "id": 6,
+        "title": "Response Time Distribution",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, rate(http_request_duration_seconds_bucket{job=\"bol-ocr-app\"}[5m]))",
+            "legendFormat": "50th percentile"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job=\"bol-ocr-app\"}[5m]))",
+            "legendFormat": "95th percentile"
+          },
+          {
+            "expr": "histogram_quantile(0.99, rate(http_request_duration_seconds_bucket{job=\"bol-ocr-app\"}[5m]))",
+            "legendFormat": "99th percentile"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+        "yAxes": [
+          {"label": "Seconds", "show": true},
+          {"show": false}
+        ]
+      },
+      {
+        "id": 7,
+        "title": "OCR Processing Metrics",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(bol_ocr_documents_processed_total[5m])",
+            "legendFormat": "Documents Processed/sec"
+          },
+          {
+            "expr": "rate(bol_ocr_processing_failures_total[5m])",
+            "legendFormat": "Processing Failures/sec"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+        "yAxes": [
+          {"label": "Documents/sec", "show": true},
+          {"show": false}
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Processing Time by Method",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(bol_ocr_processing_duration_seconds_bucket{method=\"text\"}[5m]))",
+            "legendFormat": "Text Extraction (95th)"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(bol_ocr_processing_duration_seconds_bucket{method=\"ocr\"}[5m]))",
+            "legendFormat": "OCR Processing (95th)"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+        "yAxes": [
+          {"label": "Seconds", "show": true},
+          {"show": false}
+        ]
+      },
+      {
+        "id": 9,
+        "title": "Resource Usage",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(container_cpu_usage_seconds_total{pod=~\"bol-ocr-app-.*\"}[5m]) * 100",
+            "legendFormat": "CPU Usage % - {{pod}}"
+          },
+          {
+            "expr": "container_memory_usage_bytes{pod=~\"bol-ocr-app-.*\"} / 1024 / 1024",
+            "legendFormat": "Memory Usage MB - {{pod}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 20},
+        "yAxes": [
+          {"label": "Percent / MB", "show": true},
+          {"show": false}
+        ]
+      },
+      {
+        "id": 10,
+        "title": "Queue and Storage Metrics",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "bol_ocr_processing_queue_size",
+            "legendFormat": "Processing Queue Size"
+          },
+          {
+            "expr": "bol_ocr_temp_files_count",
+            "legendFormat": "Temporary Files Count"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 20},
+        "yAxes": [
+          {"label": "Count", "show": true},
+          {"show": false}
+        ]
+      },
+      {
+        "id": 11,
+        "title": "Extraction Confidence Distribution",
+        "type": "piechart",
+        "targets": [
+          {
+            "expr": "sum(rate(bol_ocr_extraction_confidence_total{confidence=\"high\"}[5m]))",
+            "legendFormat": "High Confidence"
+          },
+          {
+            "expr": "sum(rate(bol_ocr_extraction_confidence_total{confidence=\"medium\"}[5m]))",
+            "legendFormat": "Medium Confidence"
+          },
+          {
+            "expr": "sum(rate(bol_ocr_extraction_confidence_total{confidence=\"low\"}[5m]))",
+            "legendFormat": "Low Confidence"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 8, "x": 0, "y": 28}
+      },
+      {
+        "id": 12,
+        "title": "File Upload Metrics",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(bol_ocr_uploads_total[5m])",
+            "legendFormat": "Successful Uploads/sec"
+          },
+          {
+            "expr": "rate(bol_ocr_upload_failures_total[5m])",
+            "legendFormat": "Failed Uploads/sec"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 8, "x": 8, "y": 28},
+        "yAxes": [
+          {"label": "Uploads/sec", "show": true},
+          {"show": false}
+        ]
+      },
+      {
+        "id": 13,
+        "title": "Recent Alerts",
+        "type": "table",
+        "targets": [
+          {
+            "expr": "ALERTS{alertname=~\"BOLOCR.*\"}",
+            "legendFormat": "{{alertname}} - {{severity}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 8, "x": 16, "y": 28}
+      }
+    ],
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "timepicker": {
+      "refresh_intervals": ["5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h", "2h", "1d"],
+      "time_options": ["5m", "15m", "1h", "6h", "12h", "24h", "2d", "7d", "30d"]
+    },
+    "refresh": "30s",
+    "schemaVersion": 30,
+    "version": 1,
+    "links": []
+  }
+}

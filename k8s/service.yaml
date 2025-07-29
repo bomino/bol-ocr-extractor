@@ -1,0 +1,133 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bol-ocr-app-service
+  namespace: bol-ocr
+  labels:
+    app: bol-ocr-extractor
+    component: application
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8501
+    targetPort: 8501
+    protocol: TCP
+    name: http
+  selector:
+    app: bol-ocr-extractor
+    component: application
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-service
+  namespace: bol-ocr
+  labels:
+    app: bol-ocr-extractor
+    component: nginx
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+    name: http
+  - port: 443
+    targetPort: 443
+    protocol: TCP
+    name: https
+  selector:
+    app: bol-ocr-extractor
+    component: nginx
+  # Uncomment for cloud-specific load balancer annotations
+  # annotations:
+  #   # AWS
+  #   service.beta.kubernetes.io/aws-load-balancer-type: nlb
+  #   service.beta.kubernetes.io/aws-load-balancer-ssl-cert: arn:aws:acm:region:account:certificate/cert-id
+  #   # GCP
+  #   cloud.google.com/load-balancer-type: "External"
+  #   # Azure
+  #   service.beta.kubernetes.io/azure-load-balancer-internal: "false"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-service
+  namespace: bol-ocr
+  labels:
+    app: bol-ocr-extractor
+    component: redis
+spec:
+  type: ClusterIP
+  ports:
+  - port: 6379
+    targetPort: 6379
+    protocol: TCP
+    name: redis
+  selector:
+    app: bol-ocr-extractor
+    component: redis
+
+---
+# Headless service for StatefulSet (if using Redis cluster in the future)
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-headless
+  namespace: bol-ocr
+  labels:
+    app: bol-ocr-extractor
+    component: redis
+spec:
+  clusterIP: None
+  ports:
+  - port: 6379
+    targetPort: 6379
+    protocol: TCP
+    name: redis
+  selector:
+    app: bol-ocr-extractor
+    component: redis
+
+---
+# Service for monitoring
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus-service
+  namespace: bol-ocr
+  labels:
+    app: bol-ocr-extractor
+    component: monitoring
+spec:
+  type: ClusterIP
+  ports:
+  - port: 9090
+    targetPort: 9090
+    protocol: TCP
+    name: prometheus
+  selector:
+    app: prometheus
+    component: server
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana-service
+  namespace: bol-ocr
+  labels:
+    app: bol-ocr-extractor
+    component: monitoring
+spec:
+  type: ClusterIP
+  ports:
+  - port: 3000
+    targetPort: 3000
+    protocol: TCP
+    name: grafana
+  selector:
+    app: grafana

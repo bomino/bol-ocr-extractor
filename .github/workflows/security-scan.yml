@@ -1,0 +1,364 @@
+name: Security Scanning
+
+on:
+  schedule:
+    # Run security scans daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'requirements.txt'
+      - 'Dockerfile'
+      - '.github/workflows/security-scan.yml'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  dependency-scan:
+    name: Dependency Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Run Safety security scan
+      run: |
+        pip install safety
+        safety check --json --output safety-report.json
+        safety check --short-report
+      continue-on-error: true
+      
+    - name: Run pip-audit
+      run: |
+        pip install pip-audit
+        pip-audit --format=json --output=pip-audit-report.json
+        pip-audit
+      continue-on-error: true
+      
+    - name: OWASP Dependency Check
+      uses: dependency-check/Dependency-Check_Action@main
+      with:
+        project: 'bol-ocr-extractor'
+        path: '.'
+        format: 'ALL'
+        args: >
+          --enableRetired
+          --enableExperimental
+          --failOnCVSS 7
+          
+    - name: Upload dependency scan results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: dependency-scan-results
+        path: |
+          safety-report.json
+          pip-audit-report.json
+          reports/
+          
+  container-scan:
+    name: Container Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Build Docker image for scanning
+      run: |
+        docker build -t bol-ocr-extractor:scan .
+        
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'bol-ocr-extractor:scan'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        severity: 'CRITICAL,HIGH,MEDIUM'
+        
+    - name: Upload Trivy scan results
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+        
+    - name: Run Grype vulnerability scanner
+      uses: anchore/scan-action@v3
+      with:
+        image: 'bol-ocr-extractor:scan'
+        fail-build: false
+        severity-cutoff: medium
+        
+    - name: Run Docker Bench Security
+      run: |
+        git clone https://github.com/docker/docker-bench-security.git
+        cd docker-bench-security
+        sudo sh docker-bench-security.sh
+        
+    - name: Container structure test
+      run: |
+        # Install container-structure-test
+        curl -LO https://storage.googleapis.com/container-structure-test/latest/container-structure-test-linux-amd64
+        chmod +x container-structure-test-linux-amd64
+        sudo mv container-structure-test-linux-amd64 /usr/local/bin/container-structure-test
+        
+        # Create test configuration
+        cat > container-test.yaml << 'EOF'
+        schemaVersion: 2.0.0
+        
+        commandTests:
+          - name: "Check Python version"
+            command: "python"
+            args: ["--version"]
+            expectedOutput: ["Python 3.11.*"]
+            
+          - name: "Check Tesseract installation"
+            command: "tesseract"
+            args: ["--version"]
+            expectedOutput: ["tesseract.*"]
+            
+          - name: "Check Java installation"
+            command: "java"
+            args: ["-version"]
+            expectedError: ["openjdk version.*"]
+        
+        fileExistenceTests:
+          - name: "Application file exists"
+            path: "/app/app.py"
+            shouldExist: true
+            
+          - name: "Requirements file exists"
+            path: "/app/requirements.txt"
+            shouldExist: true
+        
+        fileContentTests:
+          - name: "Non-root user"
+            path: "/etc/passwd"
+            expectedContents: ["appuser:x:1000:1000:.*"]
+            
+        metadataTests:
+          - key: "User"
+            value: "1000:1000"
+        EOF
+        
+        # Run structure tests
+        container-structure-test test --image bol-ocr-extractor:scan --config container-test.yaml
+
+  secrets-scan:
+    name: Secrets Scanning
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Run GitLeaks
+      uses: gitleaks/gitleaks-action@v2
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+        
+    - name: Run TruffleHog
+      uses: trufflesecurity/trufflehog@main
+      with:
+        path: ./
+        base: main
+        head: HEAD
+        extra_args: --debug --only-verified
+        
+    - name: Semgrep Security Scan
+      uses: returntocorp/semgrep-action@v1
+      with:
+        config: >-
+          p/security-audit
+          p/secrets
+          p/owasp-top-ten
+          p/docker
+        generateRuleset: auto
+
+  infrastructure-scan:
+    name: Infrastructure Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Run Checkov
+      uses: bridgecrewio/checkov-action@master
+      with:
+        directory: .
+        framework: dockerfile,kubernetes
+        output_format: sarif
+        output_file_path: checkov-results.sarif
+        
+    - name: Upload Checkov results
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: checkov-results.sarif
+        
+    - name: Run kube-score
+      run: |
+        # Install kube-score
+        wget https://github.com/zegl/kube-score/releases/latest/download/kube-score_linux_amd64.tar.gz
+        tar xzf kube-score_linux_amd64.tar.gz
+        sudo mv kube-score /usr/local/bin/
+        
+        # Run kube-score on Kubernetes manifests
+        find k8s/ -name "*.yaml" -exec kube-score score {} \;
+        
+    - name: Run Polaris
+      run: |
+        # Install Polaris
+        wget https://github.com/FairwindsOps/polaris/releases/latest/download/polaris_linux_amd64.tar.gz
+        tar xzf polaris_linux_amd64.tar.gz
+        sudo mv polaris /usr/local/bin/
+        
+        # Run Polaris audit
+        polaris audit --audit-path k8s/ --format json > polaris-results.json
+        polaris audit --audit-path k8s/
+        
+    - name: Upload infrastructure scan results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: infrastructure-scan-results
+        path: |
+          checkov-results.sarif
+          polaris-results.json
+
+  compliance-scan:
+    name: Compliance Scanning
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: CIS Docker Benchmark
+      run: |
+        git clone https://github.com/docker/docker-bench-security.git
+        cd docker-bench-security
+        # Build test image first
+        docker build -t bol-ocr-extractor:scan ..
+        sudo sh docker-bench-security.sh
+        
+    - name: NIST Cybersecurity Framework Check
+      run: |
+        # Custom compliance checks based on NIST framework
+        echo "Running NIST compliance checks..."
+        
+        # Check for security headers in nginx config
+        if grep -q "X-Frame-Options" k8s/configmap.yaml; then
+          echo "✓ NIST PR.DS-5: Security headers configured"
+        else
+          echo "✗ NIST PR.DS-5: Missing security headers"
+        fi
+        
+        # Check for TLS configuration
+        if grep -q "ssl_protocols" k8s/configmap.yaml; then
+          echo "✓ NIST PR.DS-2: TLS configuration present"
+        else
+          echo "✗ NIST PR.DS-2: TLS configuration missing"
+        fi
+        
+        # Check for resource limits
+        if grep -q "resources:" k8s/deployment.yaml; then
+          echo "✓ NIST DE.CM-3: Resource limits configured"
+        else
+          echo "✗ NIST DE.CM-3: Resource limits missing"
+        fi
+        
+        # Check for network policies
+        if find k8s/ -name "*networkpolicy*" | grep -q .; then
+          echo "✓ NIST PR.AC-4: Network segmentation configured"
+        else
+          echo "⚠ NIST PR.AC-4: Consider implementing network policies"
+        fi
+
+  security-report:
+    name: Generate Security Report
+    runs-on: ubuntu-latest
+    needs: [dependency-scan, container-scan, secrets-scan, infrastructure-scan, compliance-scan]
+    if: always()
+    
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v3
+      
+    - name: Generate security report
+      run: |
+        # Create comprehensive security report
+        cat > security-report.md << 'EOF'
+        # Security Scan Report
+        
+        **Date:** $(date)
+        **Repository:** ${{ github.repository }}
+        **Commit:** ${{ github.sha }}
+        
+        ## Summary
+        
+        This report contains the results of automated security scans performed on the BOL OCR Extractor application.
+        
+        ## Scans Performed
+        
+        - ✅ Dependency vulnerability scanning
+        - ✅ Container security scanning  
+        - ✅ Secrets detection
+        - ✅ Infrastructure security analysis
+        - ✅ Compliance checks
+        
+        ## Recommendations
+        
+        1. Review and address any high/critical vulnerabilities found
+        2. Implement recommended security configurations
+        3. Update dependencies regularly
+        4. Monitor for new security advisories
+        
+        ## Files Analyzed
+        
+        - Application code (app.py)
+        - Dependencies (requirements.txt)
+        - Docker configuration (Dockerfile)
+        - Kubernetes manifests (k8s/)
+        - CI/CD pipelines (.github/workflows/)
+        
+        EOF
+        
+        echo "Security report generated successfully"
+        
+    - name: Upload security report
+      uses: actions/upload-artifact@v3
+      with:
+        name: security-report
+        path: security-report.md
+        
+    - name: Comment on PR (if applicable)
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          const report = fs.readFileSync('security-report.md', 'utf8');
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: `## Security Scan Results\n\n${report}`
+          });

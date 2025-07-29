@@ -1,0 +1,264 @@
+# Prometheus alerting rules for BOL OCR Extractor
+
+groups:
+  - name: bol-ocr-application
+    rules:
+      # Application availability
+      - alert: BOLOCRApplicationDown
+        expr: up{job="bol-ocr-app"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: bol-ocr
+        annotations:
+          summary: "BOL OCR application is down"
+          description: "BOL OCR application {{ $labels.instance }} has been down for more than 1 minute."
+
+      # High response time
+      - alert: BOLOCRHighResponseTime
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job="bol-ocr-app"}[5m])) > 10
+        for: 5m
+        labels:
+          severity: warning
+          service: bol-ocr
+        annotations:
+          summary: "BOL OCR application high response time"
+          description: "95th percentile response time for BOL OCR application is {{ $value }}s, which is above the 10s threshold."
+
+      # High error rate
+      - alert: BOLOCRHighErrorRate
+        expr: rate(http_requests_total{job="bol-ocr-app",status=~"5.."}[5m]) / rate(http_requests_total{job="bol-ocr-app"}[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          service: bol-ocr
+        annotations:
+          summary: "BOL OCR application high error rate"
+          description: "Error rate for BOL OCR application is {{ $value | humanizePercentage }}, which is above the 5% threshold."
+
+      # Memory usage high
+      - alert: BOLOCRHighMemoryUsage
+        expr: (container_memory_usage_bytes{pod=~"bol-ocr-app-.*"} / container_spec_memory_limit_bytes{pod=~"bol-ocr-app-.*"}) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          service: bol-ocr
+        annotations:
+          summary: "BOL OCR application high memory usage"
+          description: "Memory usage for BOL OCR pod {{ $labels.pod }} is {{ $value | humanizePercentage }}, which is above the 85% threshold."
+
+      # CPU usage high
+      - alert: BOLOCRHighCPUUsage
+        expr: (rate(container_cpu_usage_seconds_total{pod=~"bol-ocr-app-.*"}[5m]) / container_spec_cpu_quota{pod=~"bol-ocr-app-.*"} * container_spec_cpu_period{pod=~"bol-ocr-app-.*"}) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          service: bol-ocr
+        annotations:
+          summary: "BOL OCR application high CPU usage"
+          description: "CPU usage for BOL OCR pod {{ $labels.pod }} is {{ $value | humanizePercentage }}, which is above the 85% threshold."
+
+      # OCR processing failures
+      - alert: BOLOCROCRProcessingFailures
+        expr: increase(bol_ocr_processing_failures_total[10m]) > 5
+        for: 0m
+        labels:
+          severity: warning
+          service: bol-ocr
+        annotations:
+          summary: "BOL OCR processing failures detected"
+          description: "{{ $value }} OCR processing failures detected in the last 10 minutes."
+
+      # File upload failures
+      - alert: BOLOCRUploadFailures
+        expr: increase(bol_ocr_upload_failures_total[10m]) > 3
+        for: 0m
+        labels:
+          severity: warning
+          service: bol-ocr
+        annotations:
+          summary: "BOL OCR file upload failures detected"
+          description: "{{ $value }} file upload failures detected in the last 10 minutes."
+
+      # Processing queue backup
+      - alert: BOLOCRProcessingQueueBackup
+        expr: bol_ocr_processing_queue_size > 50
+        for: 5m
+        labels:
+          severity: warning
+          service: bol-ocr
+        annotations:
+          summary: "BOL OCR processing queue backup"
+          description: "Processing queue size is {{ $value }}, indicating potential performance issues."
+
+  - name: bol-ocr-infrastructure
+    rules:
+      # Redis connectivity
+      - alert: BOLOCRRedisDown
+        expr: up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: redis
+        annotations:
+          summary: "Redis is down"
+          description: "Redis instance {{ $labels.instance }} has been down for more than 1 minute."
+
+      # Redis memory usage
+      - alert: BOLOCRRedisHighMemoryUsage
+        expr: (redis_memory_used_bytes / redis_memory_max_bytes) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          service: redis
+        annotations:
+          summary: "Redis high memory usage"
+          description: "Redis memory usage is {{ $value | humanizePercentage }}, which is above the 85% threshold."
+
+      # Nginx connectivity
+      - alert: BOLOCRNginxDown
+        expr: up{job="nginx"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: nginx
+        annotations:
+          summary: "Nginx is down"
+          description: "Nginx instance {{ $labels.instance }} has been down for more than 1 minute."
+
+      # Load balancer health
+      - alert: BOLOCRLoadBalancerUnhealthy
+        expr: nginx_upstream_healthchecks_fails_total > 0
+        for: 2m
+        labels:
+          severity: warning
+          service: nginx
+        annotations:
+          summary: "Load balancer upstream unhealthy"
+          description: "Nginx upstream {{ $labels.upstream }} has failing health checks."
+
+  - name: bol-ocr-kubernetes
+    rules:
+      # Pod restart frequency
+      - alert: BOLOCRPodRestartingFrequently
+        expr: increase(kube_pod_container_status_restarts_total{namespace="bol-ocr"}[1h]) > 3
+        for: 0m
+        labels:
+          severity: warning
+          service: kubernetes
+        annotations:
+          summary: "Pod restarting frequently"
+          description: "Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} has restarted {{ $value }} times in the last hour."
+
+      # Pod not ready
+      - alert: BOLOCRPodNotReady
+        expr: kube_pod_status_ready{namespace="bol-ocr", condition="false"} == 1
+        for: 5m
+        labels:
+          severity: warning
+          service: kubernetes
+        annotations:
+          summary: "Pod not ready"
+          description: "Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} has been not ready for more than 5 minutes."
+
+      # Deployment replica mismatch
+      - alert: BOLOCRDeploymentReplicaMismatch
+        expr: kube_deployment_spec_replicas{namespace="bol-ocr"} != kube_deployment_status_replicas_available{namespace="bol-ocr"}
+        for: 5m
+        labels:
+          severity: warning
+          service: kubernetes
+        annotations:
+          summary: "Deployment replica mismatch"
+          description: "Deployment {{ $labels.deployment }} in namespace {{ $labels.namespace }} has {{ $labels.spec_replicas }} desired replicas but {{ $labels.available_replicas }} are available."
+
+      # Node resource pressure
+      - alert: BOLOCRNodeMemoryPressure
+        expr: kube_node_status_condition{condition="MemoryPressure", status="true"} == 1
+        for: 5m
+        labels:
+          severity: warning
+          service: kubernetes
+        annotations:
+          summary: "Node memory pressure"
+          description: "Node {{ $labels.node }} is experiencing memory pressure."
+
+      - alert: BOLOCRNodeDiskPressure
+        expr: kube_node_status_condition{condition="DiskPressure", status="true"} == 1
+        for: 5m
+        labels:
+          severity: warning
+          service: kubernetes
+        annotations:
+          summary: "Node disk pressure"
+          description: "Node {{ $labels.node }} is experiencing disk pressure."
+
+  - name: bol-ocr-security
+    rules:
+      # Suspicious activity
+      - alert: BOLOCRSuspiciousFileUploads
+        expr: increase(bol_ocr_suspicious_uploads_total[10m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          service: security
+        annotations:
+          summary: "Suspicious file uploads detected"
+          description: "{{ $value }} suspicious file uploads detected in the last 10 minutes. Potential security incident."
+
+      # Failed authentication attempts
+      - alert: BOLOCRFailedAuthAttempts
+        expr: increase(nginx_http_requests_total{status="401"}[5m]) > 10
+        for: 0m
+        labels:
+          severity: warning
+          service: security
+        annotations:
+          summary: "Multiple failed authentication attempts"
+          description: "{{ $value }} failed authentication attempts detected in the last 5 minutes."
+
+      # Rate limiting triggered
+      - alert: BOLOCRRateLimitingTriggered
+        expr: increase(nginx_http_requests_total{status="429"}[5m]) > 20
+        for: 0m
+        labels:
+          severity: warning
+          service: security
+        annotations:
+          summary: "Rate limiting frequently triggered"
+          description: "Rate limiting has been triggered {{ $value }} times in the last 5 minutes, indicating potential abuse."
+
+  - name: bol-ocr-performance
+    rules:
+      # Processing time degradation
+      - alert: BOLOCRProcessingTimeDegradation
+        expr: histogram_quantile(0.95, rate(bol_ocr_processing_duration_seconds_bucket[10m])) > 300
+        for: 5m
+        labels:
+          severity: warning
+          service: performance
+        annotations:
+          summary: "BOL OCR processing time degradation"
+          description: "95th percentile processing time is {{ $value }}s, which is above the 300s threshold."
+
+      # OCR accuracy decline
+      - alert: BOLOCROCRAccuracyDecline
+        expr: avg_over_time(bol_ocr_extraction_confidence[1h]) < 0.7
+        for: 10m
+        labels:
+          severity: warning
+          service: performance
+        annotations:
+          summary: "OCR accuracy decline detected"
+          description: "Average OCR extraction confidence over the last hour is {{ $value }}, which is below the 70% threshold."
+
+      # Disk space usage
+      - alert: BOLOCRDiskSpaceUsageHigh
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) < 0.15
+        for: 5m
+        labels:
+          severity: warning
+          service: infrastructure
+        annotations:
+          summary: "Disk space usage high"
+          description: "Disk space usage on {{ $labels.instance }} is above 85%. Available space: {{ $value | humanizePercentage }}."

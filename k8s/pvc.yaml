@@ -1,0 +1,113 @@
+---
+# Persistent Volume Claim for Redis data
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-data-pvc
+  namespace: bol-ocr
+  labels:
+    app: bol-ocr-extractor
+    component: storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: gp3  # Use appropriate storage class for your cloud provider
+  # For AWS: gp3, gp2
+  # For GCP: standard, ssd
+  # For Azure: managed-premium, managed-standard
+
+---
+# Persistent Volume Claim for application logs (optional)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: app-logs-pvc
+  namespace: bol-ocr
+  labels:
+    app: bol-ocr-extractor
+    component: storage
+spec:
+  accessModes:
+    - ReadWriteMany  # Multiple pods can write logs
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: efs  # Use EFS for multi-attach on AWS, or equivalent for other clouds
+  # For AWS: efs
+  # For GCP: filestore-csi
+  # For Azure: azurefile
+
+---
+# Persistent Volume Claim for monitoring data
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prometheus-data-pvc
+  namespace: bol-ocr
+  labels:
+    app: bol-ocr-extractor
+    component: monitoring
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: gp3
+
+---
+# Persistent Volume Claim for Grafana data
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-data-pvc
+  namespace: bol-ocr
+  labels:
+    app: bol-ocr-extractor
+    component: monitoring
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: gp3
+
+---
+# Storage Class for fast SSD storage (example for AWS)
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: fast-ssd
+  labels:
+    app: bol-ocr-extractor
+    component: storage
+provisioner: ebs.csi.aws.com
+parameters:
+  type: gp3
+  iops: "3000"
+  throughput: "125"
+  encrypted: "true"
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+reclaimPolicy: Delete
+
+---
+# Storage Class for backup storage (example for AWS)
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: backup-storage
+  labels:
+    app: bol-ocr-extractor
+    component: storage
+provisioner: ebs.csi.aws.com
+parameters:
+  type: gp3
+  encrypted: "true"
+volumeBindingMode: Immediate
+allowVolumeExpansion: true
+reclaimPolicy: Retain  # Retain for backups

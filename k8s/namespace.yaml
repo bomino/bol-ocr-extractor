@@ -1,0 +1,11 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: bol-ocr
+  labels:
+    name: bol-ocr
+    app: bol-ocr-extractor
+    environment: production
+  annotations:
+    description: "BOL OCR Extractor application namespace"

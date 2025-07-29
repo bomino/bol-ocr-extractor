@@ -1,0 +1,161 @@
+---
+# Service Account for BOL OCR application
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: bol-ocr-service-account
+  namespace: bol-ocr
+  labels:
+    app: bol-ocr-extractor
+    component: serviceaccount
+automountServiceAccountToken: true
+
+---
+# Role for application-specific permissions
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: bol-ocr
+  name: bol-ocr-role
+  labels:
+    app: bol-ocr-extractor
+    component: rbac
+rules:
+  # Allow reading ConfigMaps and Secrets
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "list"]
+  
+  # Allow reading own pod information
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+    resourceNames: []
+  
+  # Allow creating events for logging
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create"]
+
+---
+# RoleBinding to bind the role to the service account
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: bol-ocr-role-binding
+  namespace: bol-ocr
+  labels:
+    app: bol-ocr-extractor
+    component: rbac
+subjects:
+  - kind: ServiceAccount
+    name: bol-ocr-service-account
+    namespace: bol-ocr
+roleRef:
+  kind: Role
+  name: bol-ocr-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Service Account for monitoring components
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: bol-ocr-monitoring-service-account
+  namespace: bol-ocr
+  labels:
+    app: bol-ocr-extractor
+    component: monitoring
+
+---
+# ClusterRole for monitoring (read-only cluster-wide access)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: bol-ocr-monitoring-cluster-role
+  labels:
+    app: bol-ocr-extractor
+    component: monitoring
+rules:
+  # Allow reading nodes, pods, services for monitoring
+  - apiGroups: [""]
+    resources: ["nodes", "nodes/proxy", "nodes/metrics", "services", "endpoints", "pods"]
+    verbs: ["get", "list", "watch"]
+  
+  # Allow reading ingresses
+  - apiGroups: ["extensions", "networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch"]
+  
+  # Allow reading non-resource URLs
+  - nonResourceURLs: ["/metrics"]
+    verbs: ["get"]
+
+---
+# ClusterRoleBinding for monitoring
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: bol-ocr-monitoring-cluster-role-binding
+  labels:
+    app: bol-ocr-extractor
+    component: monitoring
+subjects:
+  - kind: ServiceAccount
+    name: bol-ocr-monitoring-service-account
+    namespace: bol-ocr
+roleRef:
+  kind: ClusterRole
+  name: bol-ocr-monitoring-cluster-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Service Account for backup operations
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: bol-ocr-backup-service-account
+  namespace: bol-ocr
+  labels:
+    app: bol-ocr-extractor
+    component: backup
+
+---
+# Role for backup operations
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: bol-ocr
+  name: bol-ocr-backup-role
+  labels:
+    app: bol-ocr-extractor
+    component: backup
+rules:
+  # Allow reading and writing volumes for backup
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims", "persistentvolumes"]
+    verbs: ["get", "list", "create", "update", "patch"]
+  
+  # Allow creating backup jobs
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+
+---
+# RoleBinding for backup operations
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: bol-ocr-backup-role-binding
+  namespace: bol-ocr
+  labels:
+    app: bol-ocr-extractor
+    component: backup
+subjects:
+  - kind: ServiceAccount
+    name: bol-ocr-backup-service-account
+    namespace: bol-ocr
+roleRef:
+  kind: Role
+  name: bol-ocr-backup-role
+  apiGroup: rbac.authorization.k8s.io

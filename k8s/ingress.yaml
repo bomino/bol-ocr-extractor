@@ -1,0 +1,177 @@
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: bol-ocr-ingress
+  namespace: bol-ocr
+  labels:
+    app: bol-ocr-extractor
+    component: ingress
+  annotations:
+    # NGINX Ingress Controller annotations
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    
+    # Security annotations
+    nginx.ingress.kubernetes.io/enable-cors: "false"
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    
+    # Rate limiting
+    nginx.ingress.kubernetes.io/rate-limit: "60"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    
+    # Security headers
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Frame-Options: DENY";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "X-XSS-Protection: 1; mode=block";
+      more_set_headers "Strict-Transport-Security: max-age=63072000; includeSubDomains; preload";
+      more_set_headers "Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self';";
+    
+    # Certificate management (cert-manager)
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    cert-manager.io/acme-challenge-type: http01
+    
+    # Cloud-specific annotations (uncomment as needed)
+    # AWS ALB
+    # kubernetes.io/ingress.class: "alb"
+    # alb.ingress.kubernetes.io/scheme: internet-facing
+    # alb.ingress.kubernetes.io/target-type: ip
+    # alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:region:account:certificate/cert-id
+    
+    # GCP GKE
+    # kubernetes.io/ingress.global-static-ip-name: "bol-ocr-ip"
+    # ingress.gcp.kubernetes.io/managed-certificates: "bol-ocr-ssl-cert"
+    
+    # Azure AKS
+    # kubernetes.io/ingress.class: "azure/application-gateway"
+    # appgw.ingress.kubernetes.io/ssl-redirect: "true"
+
+spec:
+  tls:
+  - hosts:
+    - bol-ocr.example.com  # Replace with your domain
+    - www.bol-ocr.example.com
+    secretName: bol-ocr-tls-secret
+  rules:
+  - host: bol-ocr.example.com  # Replace with your domain
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: nginx-service
+            port:
+              number: 80
+      # WebSocket support for Streamlit
+      - path: /_stcore/stream
+        pathType: Prefix
+        backend:
+          service:
+            name: bol-ocr-app-service
+            port:
+              number: 8501
+      # Health check
+      - path: /health
+        pathType: Prefix
+        backend:
+          service:
+            name: nginx-service
+            port:
+              number: 80
+  - host: www.bol-ocr.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: nginx-service
+            port:
+              number: 80
+
+---
+# Separate ingress for monitoring (internal access only)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: bol-ocr-monitoring-ingress
+  namespace: bol-ocr
+  labels:
+    app: bol-ocr-extractor
+    component: monitoring
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    
+    # IP whitelist for monitoring access (replace with your admin IPs)
+    nginx.ingress.kubernetes.io/whitelist-source-range: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+    
+    # Basic auth for additional security
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-secret: monitoring-basic-auth
+    nginx.ingress.kubernetes.io/auth-realm: 'Authentication Required - BOL OCR Monitoring'
+    
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+
+spec:
+  tls:
+  - hosts:
+    - monitoring.bol-ocr.example.com  # Replace with your monitoring domain
+    secretName: bol-ocr-monitoring-tls-secret
+  rules:
+  - host: monitoring.bol-ocr.example.com
+    http:
+      paths:
+      - path: /prometheus
+        pathType: Prefix
+        backend:
+          service:
+            name: prometheus-service
+            port:
+              number: 9090
+      - path: /grafana
+        pathType: Prefix
+        backend:
+          service:
+            name: grafana-service
+            port:
+              number: 3000
+
+---
+# Certificate for main application (if using cert-manager)
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: bol-ocr-tls-cert
+  namespace: bol-ocr
+spec:
+  secretName: bol-ocr-tls-secret
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+  - bol-ocr.example.com
+  - www.bol-ocr.example.com
+
+---
+# Certificate for monitoring
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: bol-ocr-monitoring-tls-cert
+  namespace: bol-ocr
+spec:
+  secretName: bol-ocr-monitoring-tls-secret
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+  - monitoring.bol-ocr.example.com

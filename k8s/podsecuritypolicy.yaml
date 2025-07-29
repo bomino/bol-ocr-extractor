@@ -1,0 +1,227 @@
+---
+# Pod Security Policy for BOL OCR application
+apiVersion: policy/v1beta1
+kind: PodSecurityPolicy
+metadata:
+  name: bol-ocr-psp
+  labels:
+    app: bol-ocr-extractor
+    component: security
+spec:
+  # Privilege and access control settings
+  privileged: false
+  allowPrivilegeEscalation: false
+  
+  # Required to prevent escalations to root
+  requiredDropCapabilities:
+    - ALL
+  
+  # Allow specific capabilities that the application needs
+  allowedCapabilities:
+    - CHOWN
+    - DAC_OVERRIDE
+    - SETGID
+    - SETUID
+    - NET_BIND_SERVICE  # For Nginx to bind to ports 80/443
+  
+  # Volumes and file systems
+  volumes:
+    - 'configMap'
+    - 'emptyDir'
+    - 'projected'
+    - 'secret'
+    - 'downwardAPI'
+    - 'persistentVolumeClaim'
+  
+  # Host network and ports
+  hostNetwork: false
+  hostIPC: false
+  hostPID: false
+  hostPorts:
+    - min: 0
+      max: 0
+  
+  # Security context constraints
+  runAsUser:
+    rule: 'MustRunAsNonRoot'
+  
+  runAsGroup:
+    rule: 'MustRunAs'
+    ranges:
+      - min: 1000
+        max: 65534
+  
+  seLinux:
+    rule: 'RunAsAny'
+  
+  fsGroup:
+    rule: 'MustRunAs'
+    ranges:
+      - min: 1000
+        max: 65534
+  
+  # Read-only root filesystem (disabled for Streamlit requirements)
+  readOnlyRootFilesystem: false
+  
+  # Default security context
+  defaultAllowPrivilegeEscalation: false
+  
+  # Forbidden sysctls
+  forbiddenSysctls:
+    - '*'
+
+---
+# Pod Security Policy for Nginx (more restrictive)
+apiVersion: policy/v1beta1
+kind: PodSecurityPolicy
+metadata:
+  name: bol-ocr-nginx-psp
+  labels:
+    app: bol-ocr-extractor
+    component: security
+spec:
+  privileged: false
+  allowPrivilegeEscalation: false
+  
+  requiredDropCapabilities:
+    - ALL
+  
+  allowedCapabilities:
+    - CHOWN
+    - SETGID
+    - SETUID
+    - NET_BIND_SERVICE
+  
+  volumes:
+    - 'configMap'
+    - 'emptyDir'
+    - 'projected'
+    - 'secret'
+    - 'downwardAPI'
+  
+  hostNetwork: false
+  hostIPC: false
+  hostPID: false
+  hostPorts:
+    - min: 80
+      max: 80
+    - min: 443
+      max: 443
+  
+  runAsUser:
+    rule: 'MustRunAs'
+    ranges:
+      - min: 101
+        max: 101
+  
+  runAsGroup:
+    rule: 'MustRunAs'
+    ranges:
+      - min: 101
+        max: 101
+  
+  seLinux:
+    rule: 'RunAsAny'
+  
+  fsGroup:
+    rule: 'MustRunAs'
+    ranges:
+      - min: 101
+        max: 101
+  
+  readOnlyRootFilesystem: true
+  defaultAllowPrivilegeEscalation: false
+
+---
+# Pod Security Policy for Redis
+apiVersion: policy/v1beta1
+kind: PodSecurityPolicy
+metadata:
+  name: bol-ocr-redis-psp
+  labels:
+    app: bol-ocr-extractor
+    component: security
+spec:
+  privileged: false
+  allowPrivilegeEscalation: false
+  
+  requiredDropCapabilities:
+    - ALL
+  
+  allowedCapabilities: []
+  
+  volumes:
+    - 'emptyDir'
+    - 'persistentVolumeClaim'
+    - 'configMap'
+    - 'secret'
+  
+  hostNetwork: false
+  hostIPC: false
+  hostPID: false
+  hostPorts:
+    - min: 0
+      max: 0
+  
+  runAsUser:
+    rule: 'MustRunAs'
+    ranges:
+      - min: 999
+        max: 999
+  
+  runAsGroup:
+    rule: 'MustRunAs'
+    ranges:
+      - min: 999
+        max: 999
+  
+  seLinux:
+    rule: 'RunAsAny'
+  
+  fsGroup:
+    rule: 'MustRunAs'
+    ranges:
+      - min: 999
+        max: 999
+  
+  readOnlyRootFilesystem: true
+  defaultAllowPrivilegeEscalation: false
+
+---
+# ClusterRole for PSP usage
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: bol-ocr-psp-user
+  labels:
+    app: bol-ocr-extractor
+    component: security
+rules:
+  - apiGroups: ['policy']
+    resources: ['podsecuritypolicies']
+    verbs: ['use']
+    resourceNames:
+      - bol-ocr-psp
+      - bol-ocr-nginx-psp
+      - bol-ocr-redis-psp
+
+---
+# ClusterRoleBinding for PSP
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: bol-ocr-psp-user-binding
+  labels:
+    app: bol-ocr-extractor
+    component: security
+subjects:
+  - kind: ServiceAccount
+    name: bol-ocr-service-account
+    namespace: bol-ocr
+  - kind: ServiceAccount
+    name: default
+    namespace: bol-ocr
+roleRef:
+  kind: ClusterRole
+  name: bol-ocr-psp-user
+  apiGroup: rbac.authorization.k8s.io
